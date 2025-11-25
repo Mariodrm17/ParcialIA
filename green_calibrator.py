@@ -1,11 +1,12 @@
 """
-GREEN CALIBRATOR - Calibración del Tapete Verde
-Sistema interactivo para calibrar la detección del tapete
+GREEN CALIBRATOR - VERSIÓN ARREGLADA
+Usa múltiples backends como CameraManager
 """
 
 import cv2
 import numpy as np
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -16,16 +17,41 @@ class GreenCalibrator:
         self.config_file = Path(config_file)
         self.green_lower = None
         self.green_upper = None
+    
+    def _open_camera(self, camera_index: int):
+        """Abre cámara probando múltiples backends"""
+        backends = [
+            cv2.CAP_DSHOW,   # DirectShow (Windows)
+            cv2.CAP_MSMF,    # Media Foundation (Windows)
+            cv2.CAP_V4L2,    # Video4Linux (Linux)
+            cv2.CAP_AVFOUNDATION,  # macOS
+            cv2.CAP_ANY      # Auto-detect
+        ]
+        
+        for backend in backends:
+            try:
+                print(f"  Probando backend: {backend}")
+                cap = cv2.VideoCapture(camera_index, backend)
+                
+                if cap.isOpened():
+                    # Verificar que funciona
+                    ret, frame = cap.read()
+                    
+                    if ret and frame is not None:
+                        print(f"  ✅ Backend exitoso: {backend}")
+                        return cap
+                    else:
+                        cap.release()
+                        
+            except Exception as e:
+                print(f"  ❌ Falló backend {backend}: {e}")
+                continue
+        
+        return None
         
     def calibrate(self, camera_index: int = 0) -> bool:
         """
         Calibración interactiva con trackbars
-        
-        Args:
-            camera_index: Índice de la cámara a usar
-            
-        Returns:
-            True si calibración exitosa
         """
         print("=" * 70)
         print("🎨 CALIBRADOR DE TAPETE VERDE")
@@ -43,11 +69,17 @@ class GreenCalibrator:
         
         input("\n⏸️  Presiona ENTER cuando esté listo...")
         
-        # Abrir cámara
-        cap = cv2.VideoCapture(camera_index)
+        # Abrir cámara CON MÚLTIPLES BACKENDS
+        print(f"\n🎥 Abriendo cámara {camera_index}...")
+        cap = self._open_camera(camera_index)
         
-        if not cap.isOpened():
-            print(f"❌ No se pudo abrir la cámara {camera_index}")
+        if cap is None:
+            print(f"\n❌ NO SE PUDO ABRIR LA CÁMARA {camera_index}")
+            print("\n🔧 SOLUCIONES:")
+            print("1. Verifica que la cámara esté conectada")
+            print("2. Cierra otras aplicaciones que usen la cámara")
+            print("3. Prueba con otro índice (python 2_green_calibrator.py)")
+            print("4. En Windows: verifica permisos de cámara en Configuración")
             return False
         
         # Configurar cámara
@@ -55,7 +87,10 @@ class GreenCalibrator:
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
         
-        print("\n🎥 Cámara iniciada...")
+        # Esperar inicialización
+        time.sleep(1)
+        
+        print("✅ Cámara iniciada")
         
         # Valores iniciales (rango amplio de verdes)
         h_min, h_max = 35, 85
@@ -79,7 +114,7 @@ class GreenCalibrator:
         cv2.createTrackbar('V Min', window_controls, v_min, 255, lambda x: None)
         cv2.createTrackbar('V Max', window_controls, v_max, 255, lambda x: None)
         
-        # Crear imagen de ayuda para controles
+        # Crear imagen de ayuda
         control_img = np.zeros((200, 600, 3), dtype=np.uint8)
         cv2.putText(control_img, "AJUSTA LOS TRACKBARS:", (10, 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
@@ -99,13 +134,17 @@ class GreenCalibrator:
         print("   - Finalmente V (Value) para el brillo")
         
         calibrated = False
+        frame_count = 0
         
         while True:
             ret, frame = cap.read()
             
-            if not ret:
-                print("❌ Error leyendo cámara")
-                break
+            if not ret or frame is None:
+                print(f"⚠️  Frame {frame_count} falló")
+                time.sleep(0.1)
+                continue
+            
+            frame_count += 1
             
             # Leer valores actuales
             h_min = cv2.getTrackbarPos('H Min', window_controls)
@@ -123,12 +162,12 @@ class GreenCalibrator:
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             mask = cv2.inRange(hsv, lower, upper)
             
-            # Morfología para limpiar
+            # Morfología
             kernel = np.ones((5, 5), np.uint8)
             mask_clean = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
             mask_clean = cv2.morphologyEx(mask_clean, cv2.MORPH_OPEN, kernel)
             
-            # Calcular porcentaje detectado
+            # Calcular porcentaje
             white_pixels = cv2.countNonZero(mask_clean)
             total_pixels = mask_clean.shape[0] * mask_clean.shape[1]
             percentage = (white_pixels / total_pixels) * 100
@@ -141,20 +180,19 @@ class GreenCalibrator:
                        (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
             
             # Resultado con info
-            result_display = mask_clean.copy()
-            result_display = cv2.cvtColor(result_display, cv2.COLOR_GRAY2BGR)
+            result_display = cv2.cvtColor(mask_clean, cv2.COLOR_GRAY2BGR)
             cv2.putText(result_display, f"H:[{h_min}-{h_max}] S:[{s_min}-{s_max}] V:[{v_min}-{v_max}]",
                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
             
             # Estado visual
             if 20 <= percentage <= 80:
-                color = (0, 255, 0)  # Verde = bien
+                color = (0, 255, 0)
                 status = "BUENO"
             elif percentage < 20:
-                color = (0, 165, 255)  # Naranja = muy poco
+                color = (0, 165, 255)
                 status = "MUY POCO - Aumenta rangos"
             else:
-                color = (0, 0, 255)  # Rojo = mucho
+                color = (0, 0, 255)
                 status = "DEMASIADO - Reduce rangos"
             
             cv2.putText(result_display, status, (10, 60),
@@ -176,12 +214,10 @@ class GreenCalibrator:
                 # Validar
                 if percentage < 10:
                     print(f"\n⚠️  Solo {percentage:.1f}% detectado. Demasiado poco.")
-                    print("   Ajusta los valores para detectar más área verde")
                     continue
                 
                 if percentage > 95:
                     print(f"\n⚠️  {percentage:.1f}% detectado. Demasiado.")
-                    print("   Estás detectando casi todo. Ajusta los valores.")
                     continue
                 
                 # Guardar
@@ -191,9 +227,9 @@ class GreenCalibrator:
                 print("\n✅ CALIBRACIÓN EXITOSA!")
                 print(f"📊 Tapete detectado: {percentage:.1f}%")
                 print(f"📝 Valores:")
-                print(f"   H (Hue):        [{h_min} - {h_max}]")
-                print(f"   S (Saturación): [{s_min} - {s_max}]")
-                print(f"   V (Valor):      [{v_min} - {v_max}]")
+                print(f"   H: [{h_min} - {h_max}]")
+                print(f"   S: [{s_min} - {s_max}]")
+                print(f"   V: [{v_min} - {v_max}]")
                 
                 self.save()
                 calibrated = True
@@ -206,9 +242,8 @@ class GreenCalibrator:
         return calibrated
     
     def save(self):
-        """Guarda la calibración en JSON"""
+        """Guarda calibración"""
         if self.green_lower is None or self.green_upper is None:
-            print("⚠️  No hay calibración para guardar")
             return False
         
         config = {
@@ -230,7 +265,7 @@ class GreenCalibrator:
             return False
     
     def load(self) -> bool:
-        """Carga calibración desde JSON"""
+        """Carga calibración"""
         if not self.config_file.exists():
             print(f"⚠️  No existe: {self.config_file}")
             return False
@@ -243,10 +278,6 @@ class GreenCalibrator:
             self.green_upper = np.array(config['green_upper'])
             
             print("✅ Calibración cargada")
-            print(f"   Lower: {self.green_lower}")
-            print(f"   Upper: {self.green_upper}")
-            print(f"   Fecha: {config.get('date_readable', 'N/A')}")
-            
             return True
             
         except Exception as e:
@@ -254,7 +285,7 @@ class GreenCalibrator:
             return False
     
     def test_calibration(self, camera_index: int = 0):
-        """Prueba la calibración en tiempo real"""
+        """Prueba calibración"""
         if self.green_lower is None or self.green_upper is None:
             print("❌ Primero carga o calibra")
             return
@@ -262,9 +293,9 @@ class GreenCalibrator:
         print("\n🧪 PROBANDO CALIBRACIÓN")
         print("Presiona 'q' para salir")
         
-        cap = cv2.VideoCapture(camera_index)
+        cap = self._open_camera(camera_index)
         
-        if not cap.isOpened():
+        if cap is None:
             print(f"❌ No se pudo abrir cámara {camera_index}")
             return
         
@@ -285,7 +316,7 @@ class GreenCalibrator:
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
             mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
             
-            # Invertir (cartas = blanco)
+            # Invertir
             cards_mask = cv2.bitwise_not(mask)
             
             # Mostrar
