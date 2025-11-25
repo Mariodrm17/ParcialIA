@@ -3,6 +3,7 @@
 """
 SISTEMA EN TIEMPO REAL - RECONOCIMIENTO DE CARTAS
 Calibración y reconocimiento EN VIVO desde cámara/ivcam
+VERSIÓN CORREGIDA - Conflicto de teclas arreglado
 """
 
 import cv2
@@ -68,15 +69,18 @@ class LiveCardRecognition:
     def _load_calibration(self):
         """Carga calibración guardada."""
         if os.path.exists('calibration.json'):
-            with open('calibration.json', 'r') as f:
-                data = json.load(f)
-            self.h_min = data['h_min']
-            self.h_max = data['h_max']
-            self.s_min = data['s_min']
-            self.s_max = data['s_max']
-            self.v_min = data['v_min']
-            self.v_max = data['v_max']
-            print("✅ Calibración cargada")
+            try:
+                with open('calibration.json', 'r') as f:
+                    data = json.load(f)
+                self.h_min = data['h_min']
+                self.h_max = data['h_max']
+                self.s_min = data['s_min']
+                self.s_max = data['s_max']
+                self.v_min = data['v_min']
+                self.v_max = data['v_max']
+                print("✅ Calibración cargada")
+            except:
+                print("⚠️  Error cargando calibración, usando valores por defecto")
     
     def _save_calibration(self):
         """Guarda calibración."""
@@ -85,8 +89,8 @@ class LiveCardRecognition:
                 'h_min': self.h_min, 'h_max': self.h_max,
                 's_min': self.s_min, 's_max': self.s_max,
                 'v_min': self.v_min, 'v_max': self.v_max
-            }, f)
-        print("💾 Calibración guardada")
+            }, f, indent=4)
+        print("💾 Calibración guardada en calibration.json")
     
     def _create_mask(self, frame):
         """Crea máscara del tapete verde."""
@@ -114,7 +118,7 @@ class LiveCardRecognition:
             
             rect = cv2.minAreaRect(contour)
             box = cv2.boxPoints(rect)
-            box = np.int0(box)
+            box = np.intp(box)
             
             w, h = int(rect[1][0]), int(rect[1][1])
             if w == 0 or h == 0:
@@ -189,16 +193,20 @@ class LiveCardRecognition:
         print("\n╔══════════════════════════════════════════════════════════════╗")
         print("║          🎴  RECONOCIMIENTO EN TIEMPO REAL  🎴              ║")
         print("╚══════════════════════════════════════════════════════════════╝\n")
-        print("CONTROLES:")
-        print("  c = Cambiar a MODO CALIBRACIÓN")
-        print("  r = Cambiar a MODO RECONOCIMIENTO")
-        print("  s = GUARDAR calibración")
+        print("CONTROLES PRINCIPALES:")
+        print("  c = MODO CALIBRACIÓN")
+        print("  r = MODO RECONOCIMIENTO")
+        print("  g = GUARDAR calibración")
         print("  q = SALIR")
-        print("\nMODO CALIBRACIÓN:")
-        print("  H/h = Ajustar H Min/Max")
-        print("  S/s = Ajustar S Min/Max")
-        print("  V/v = Ajustar V Min/Max")
-        print("  +/- = Incrementar/Decrementar valor")
+        print("\nCALIBRACIÓN (solo en modo calibración):")
+        print("  H = Aumentar H Max")
+        print("  h = Disminuir H Min")
+        print("  J = Aumentar S Max")
+        print("  j = Disminuir S Min")
+        print("  K = Aumentar V Max")
+        print("  k = Disminuir V Min")
+        print("  + = Aumentar todos los Max")
+        print("  - = Disminuir todos los Min")
         print("\n" + "="*64 + "\n")
         
         cv2.namedWindow('Live Recognition', cv2.WINDOW_NORMAL)
@@ -250,7 +258,7 @@ class LiveCardRecognition:
             elif key == ord('r'):
                 self.calibration_mode = False
                 print("→ MODO: RECONOCIMIENTO")
-            elif key == ord('s'):
+            elif key == ord('g'):
                 self._save_calibration()
             elif self.calibration_mode:
                 self._handle_calibration_key(key)
@@ -293,9 +301,9 @@ class LiveCardRecognition:
         cv2.putText(display, f"V: [{self.v_min:3d} - {self.v_max:3d}]", 
                    (w//2 + 10, y_start + 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         
-        cv2.putText(display, "H/h +/- | S/s +/- | V/v +/-", 
+        cv2.putText(display, "H/h | J/j | K/k | +/-", 
                    (w//2 + 10, y_start + 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-        cv2.putText(display, "s=GUARDAR | r=RECONOCER | q=SALIR", 
+        cv2.putText(display, "g=GUARDAR | r=RECONOCER | q=SALIR", 
                    (10, display.shape[0]-20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
         
         return display
@@ -304,26 +312,41 @@ class LiveCardRecognition:
         """Maneja teclas de calibración."""
         step = 5
         
+        # H Min/Max
         if key == ord('H'):
             self.h_max = min(179, self.h_max + step)
+            print(f"H Max: {self.h_max}")
         elif key == ord('h'):
             self.h_min = max(0, self.h_min - step)
-        elif key == ord('S'):
+            print(f"H Min: {self.h_min}")
+        
+        # S Min/Max (cambié a J/j para evitar conflicto)
+        elif key == ord('J'):
             self.s_max = min(255, self.s_max + step)
-        elif key == ord('s'):
+            print(f"S Max: {self.s_max}")
+        elif key == ord('j'):
             self.s_min = max(0, self.s_min - step)
-        elif key == ord('V'):
+            print(f"S Min: {self.s_min}")
+        
+        # V Min/Max (cambié a K/k para más lógica)
+        elif key == ord('K'):
             self.v_max = min(255, self.v_max + step)
-        elif key == ord('v'):
+            print(f"V Max: {self.v_max}")
+        elif key == ord('k'):
             self.v_min = max(0, self.v_min - step)
+            print(f"V Min: {self.v_min}")
+        
+        # Todos a la vez
         elif key == ord('+') or key == ord('='):
             self.h_max = min(179, self.h_max + step)
             self.s_max = min(255, self.s_max + step)
             self.v_max = min(255, self.v_max + step)
+            print(f"Todos Max aumentados")
         elif key == ord('-'):
             self.h_min = max(0, self.h_min - step)
             self.s_min = max(0, self.s_min - step)
             self.v_min = max(0, self.v_min - step)
+            print(f"Todos Min disminuidos")
 
 
 def main():
