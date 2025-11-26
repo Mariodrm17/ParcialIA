@@ -42,7 +42,7 @@ class LiveCardRecognition:
     
     def _load_templates(self):
         """Carga templates."""
-        suit_map = {'picas': 'picas', 'corazones': 'corazones', 'diamantes': 'diamantes', 'treboles': 'treboles'}1
+        suit_map = {'picas': 'picas', 'corazones': 'corazones', 'diamantes': 'diamantes', 'treboles': 'treboles'}
         
         for suit, code in suit_map.items():
             path = os.path.join(self.template_dir, suit)
