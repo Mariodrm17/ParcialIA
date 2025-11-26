@@ -3,7 +3,7 @@
 """
 SISTEMA EN TIEMPO REAL - RECONOCIMIENTO DE CARTAS
 Calibración y reconocimiento EN VIVO desde cámara/ivcam
-VERSIÓN CORREGIDA - Conflicto de teclas arreglado
+VERSIÓN CON ROTACIONES - Reconoce cartas en cualquier orientación
 """
 
 import cv2
@@ -155,25 +155,42 @@ class LiveCardRecognition:
         return cv2.warpPerspective(frame, M, (w, h))
     
     def _recognize_card(self, card_img):
-        """Reconoce carta."""
+        """Reconoce carta en cualquier orientación (0°, 90°, 180°, 270°)."""
         if len(self.templates) == 0:
             return "?", 0.0
         
         gray = cv2.cvtColor(card_img, cv2.COLOR_BGR2GRAY) if len(card_img.shape) == 3 else card_img
-        gray = cv2.resize(gray, self.template_size, interpolation=cv2.INTER_CUBIC)
-        gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
         
         best_score = 0
         best_name = "?"
+        best_angle = 0
         
-        for name, template in self.templates.items():
-            corr = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)[0, 0]
-            diff = 1.0 - (np.mean(cv2.absdiff(gray, template)) / 255.0)
-            score = 0.6 * corr + 0.4 * diff
+        # Probar 4 rotaciones: 0°, 90°, 180°, 270°
+        for angle in [0, 90, 180, 270]:
+            # Rotar la imagen de la carta
+            if angle == 90:
+                rotated = cv2.rotate(gray, cv2.ROTATE_90_CLOCKWISE)
+            elif angle == 180:
+                rotated = cv2.rotate(gray, cv2.ROTATE_180)
+            elif angle == 270:
+                rotated = cv2.rotate(gray, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            else:
+                rotated = gray
             
-            if score > best_score:
-                best_score = score
-                best_name = name
+            # Redimensionar y normalizar
+            rotated = cv2.resize(rotated, self.template_size, interpolation=cv2.INTER_CUBIC)
+            rotated = cv2.normalize(rotated, None, 0, 255, cv2.NORM_MINMAX)
+            
+            # Comparar con todos los templates
+            for name, template in self.templates.items():
+                corr = cv2.matchTemplate(rotated, template, cv2.TM_CCOEFF_NORMED)[0, 0]
+                diff = 1.0 - (np.mean(cv2.absdiff(rotated, template)) / 255.0)
+                score = 0.6 * corr + 0.4 * diff
+                
+                if score > best_score:
+                    best_score = score
+                    best_name = name
+                    best_angle = angle
         
         return best_name, best_score
     
@@ -191,7 +208,7 @@ class LiveCardRecognition:
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         
         print("\n╔══════════════════════════════════════════════════════════════╗")
-        print("║          🎴  RECONOCIMIENTO EN TIEMPO REAL  🎴              ║")
+        print("║       🎴  RECONOCIMIENTO EN TIEMPO REAL + ROTACIONES  🎴    ║")
         print("╚══════════════════════════════════════════════════════════════╝\n")
         print("CONTROLES PRINCIPALES:")
         print("  c = MODO CALIBRACIÓN")
@@ -320,7 +337,7 @@ class LiveCardRecognition:
             self.h_min = max(0, self.h_min - step)
             print(f"H Min: {self.h_min}")
         
-        # S Min/Max (cambié a J/j para evitar conflicto)
+        # S Min/Max
         elif key == ord('J'):
             self.s_max = min(255, self.s_max + step)
             print(f"S Max: {self.s_max}")
@@ -328,7 +345,7 @@ class LiveCardRecognition:
             self.s_min = max(0, self.s_min - step)
             print(f"S Min: {self.s_min}")
         
-        # V Min/Max (cambié a K/k para más lógica)
+        # V Min/Max
         elif key == ord('K'):
             self.v_max = min(255, self.v_max + step)
             print(f"V Max: {self.v_max}")
@@ -352,7 +369,7 @@ class LiveCardRecognition:
 def main():
     """Ejecuta el sistema."""
     
-    print("\n🎴 SISTEMA DE RECONOCIMIENTO EN TIEMPO REAL\n")
+    print("\n🎴 SISTEMA DE RECONOCIMIENTO EN TIEMPO REAL + ROTACIONES\n")
     print("¿Qué cámara estás usando?")
     print("0 = Cámara integrada")
     print("1 = ivcam / cámara externa (prueba primero)")
