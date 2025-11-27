@@ -249,12 +249,14 @@ class LiveCardRecognition:
                 for card_img, box in cards:
                     name, score = self._recognize_card(card_img)
                     
-                    color = (0, 255, 0) if score >= self.threshold else (0, 165, 255)
+                    # Siempre verde - muestra la mejor opción sin dudas
+                    color = (0, 255, 0)
                     cv2.drawContours(display, [box], 0, color, 3)
                     
-                    label = f"{name}: {score:.2f}"
+                    # Solo mostrar el nombre de la carta, sin score
+                    label = f"{name}"
                     cv2.putText(display, label, tuple(box[0]), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
+                               cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
                 
                 # Info en pantalla
                 cv2.putText(display, f"MODO: RECONOCIMIENTO | Cartas: {len(cards)}", 
